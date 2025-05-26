@@ -1,40 +1,98 @@
 import blenderproc as bproc
 import os
+import bpy
 import numpy as np
 from mathutils import Matrix, Euler
 from sklearn.neighbors import KDTree
+import random
 
 def setup_scene(scene_idx):
     """Set up a scene with properly spaced random object positions"""
     bproc.clean_up()
-    
-    # Create a base plane
+
+    # ---------------------------
+    # 1. HDRI Background Setup
+    # ---------------------------
+    hdri_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../hdri"))
+    hdri_files = [f for f in os.listdir(hdri_dir) if f.lower().endswith(".hdr")]
+
+    if not hdri_files:
+        raise FileNotFoundError("No HDR files found in hdri directory")
+
+    chosen_hdri = random.choice(hdri_files)
+    hdri_path = os.path.join(hdri_dir, chosen_hdri)
+    print(f"Using HDRI: {chosen_hdri}")
+
+    # Ensure the scene has a world and that it uses nodes
+    if bpy.context.scene.world is None:
+        bpy.context.scene.world = bpy.data.worlds.new("World")
+    world = bpy.context.scene.world
+    if world.node_tree is None:
+        world.use_nodes = True
+
+    # Apply HDRI background
+    bproc.world.set_world_background_hdr_img(hdri_path)
+
+    # ---------------------------
+    # 2. Create Floor with Texture
+    # ---------------------------
     plane = bproc.object.create_primitive("PLANE", scale=[5, 5, 1])
     plane.set_location([0, 0, -3])
 
-    # Load all .ply models from folder
+    # Pick random texture from folder
+    textures_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../textures"))
+    texture_folders = [f for f in os.listdir(textures_root) if os.path.isdir(os.path.join(textures_root, f))]
+    chosen_folder = random.choice(texture_folders)
+    chosen_path = os.path.join(textures_root, chosen_folder)
+
+    texture_file = next((f for f in os.listdir(chosen_path) if "_Color" in f and f.lower().endswith(".jpg")), None)
+    if not texture_file:
+        raise FileNotFoundError(f"No _Color.jpg file found in {chosen_folder}")
+
+    texture_path = os.path.join(chosen_path, texture_file)
+    print(f"Using texture: {texture_path}")
+
+    # Create material
+    mat = bproc.material.create("textured_plane_mat")
+    mat_blender = mat.blender_obj
+    nodes = mat_blender.node_tree.nodes
+    links = mat_blender.node_tree.links
+
+    tex_image_node = nodes.new(type='ShaderNodeTexImage')
+    tex_image_node.image = bpy.data.images.load(texture_path)
+
+    bsdf_node = next((node for node in nodes if node.type == 'BSDF_PRINCIPLED'), None)
+    if bsdf_node is None:
+        raise RuntimeError("No Principled BSDF node found in material")
+
+    links.new(tex_image_node.outputs['Color'], bsdf_node.inputs['Base Color'])
+
+    # Ensure material slot exists and assign material
+    if len(plane.blender_obj.data.materials) == 0:
+        plane.blender_obj.data.materials.append(None)
+    plane.set_material(0, mat)
+
+    # ---------------------------
+    # 3. Load Objects
+    # ---------------------------
     objects = []
     ply_files = [f for f in os.listdir(ply_folder) if f.lower().endswith(".ply")]
-    
-    # Generate random but spaced positions
     positions = generate_spaced_positions(len(ply_files), min_distance=1.2)
-    
+
     for i, fname in enumerate(ply_files):
         path = os.path.join(ply_folder, fname)
         objs = bproc.loader.load_obj(path)
         for obj in objs:
-            # Set position with proper spacing
             obj.set_location(positions[i])
-            
-            # Random rotation (optional)
-            obj.set_rotation_euler(Euler(np.random.uniform(0, 2*np.pi, size=3)))
-            
+            obj.set_rotation_euler(Euler(np.random.uniform(0, 2 * np.pi, size=3)))
             material = create_vertex_color_material()
             obj.set_material(0, material)
-            obj.set_cp("category_id", i+1)  # for segmentation
+            obj.set_cp("category_id", i + 1)
             objects.append(obj)
 
-    # Add lighting with slight variations per scene
+    # ---------------------------
+    # 4. Optional: Add Directional Light (Sun)
+    # ---------------------------
     sun = bproc.types.Light()
     sun.set_type("SUN")
     sun.set_location([
@@ -43,8 +101,9 @@ def setup_scene(scene_idx):
         4 + np.random.uniform(-1, 1)
     ])
     sun.set_energy(4 + np.random.uniform(-1, 1))
-    
+
     return objects
+
 
 def generate_spaced_positions(num_objects, min_distance=1.0, max_attempts=100):
     """Generate random positions with minimum spacing between objects"""
@@ -212,5 +271,3 @@ if __name__ == "__main__":
             render_scene(scene_dir, scene_idx, angle_idx)
 
     print("\nAll scenes generated successfully!")
-
-
