@@ -38,6 +38,8 @@ def setup_scene(scene_idx):
     # ---------------------------
     plane = bproc.object.create_primitive("PLANE", scale=[5, 5, 1])
     plane.set_location([0, 0, -3])
+    # The ground should only act as an obstacle and is therefore marked passive.
+    plane.enable_rigidbody(active=False, collision_shape="MESH")
 
     # Pick random texture from folder
     textures_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../textures"))
@@ -57,6 +59,7 @@ def setup_scene(scene_idx):
     mat_blender = mat.blender_obj
     nodes = mat_blender.node_tree.nodes
     links = mat_blender.node_tree.links
+    material = create_vertex_color_material()
 
     tex_image_node = nodes.new(type='ShaderNodeTexImage')
     tex_image_node.image = bpy.data.images.load(texture_path)
@@ -85,8 +88,8 @@ def setup_scene(scene_idx):
         for obj in objs:
             obj.set_location(positions[i])
             obj.set_rotation_euler(Euler(np.random.uniform(0, 2 * np.pi, size=3)))
-            material = create_vertex_color_material()
             obj.set_material(0, material)
+            obj.enable_rigidbody(active=True)
             obj.set_cp("category_id", i + 1)
             objects.append(obj)
 
@@ -194,6 +197,9 @@ def render_scene(output_dir, scene_idx, angle_idx):
     bproc.renderer.enable_segmentation_output(map_by="instance")
     bproc.renderer.set_max_amount_of_samples(100)
     bproc.renderer.set_light_bounces(diffuse_bounces=3, glossy_bounces=3)
+
+    # Run the simulation and fix the poses of the spheres at the end
+    bproc.object.simulate_physics_and_fix_final_poses(min_simulation_time=4, max_simulation_time=20, check_object_interval=1)
 
     # Render the scene
     data = bproc.renderer.render()
