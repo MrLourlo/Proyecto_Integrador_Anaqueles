@@ -21,6 +21,8 @@ os.makedirs(mask_output_dir, exist_ok=True)
 plane = bproc.object.create_primitive("PLANE", scale=[5, 5, 1])
 plane.set_location([0, 0, -3])
 plane.set_cp("category_id", 0)
+#el suelo solo actua como un obstaculo, por lo que sus fisicas son pasivas
+plane.enable_rigidbody(active=False, collision_shape="MESH")
 
 # Material con vertex colors
 def create_vertex_color_material():
@@ -45,9 +47,10 @@ for fname in model_files:
         for _ in range(np.random.randint(1, 4)): #clonamos instancias de un objeto original
             obj = base_obj.duplicate()
             obj.set_location(np.random.uniform(-3, 3, size=3))
-            obj.set_rotation_euler(Euler(np.random.uniform(0, np.pi/4, size=3)))
+            obj.set_rotation_euler(Euler(np.random.uniform(-np.pi/4, np.pi/4, size=3)))
             obj.set_material(0, mat)
             obj.set_cp("category_id", class_id)
+            obj.enable_rigidbody(active=True) # habilitar fisicas
             objects.append(obj)
     category_id_to_name[class_id] = os.path.splitext(fname)[0]  # nombre del .ply sin extensión
     class_id += 1
@@ -63,8 +66,8 @@ light.set_location([5, -5, 5])
 light.set_energy(5)
 
 # Cámara
-cam_location = [0.0, -10.0, 4.0]
-cam_target = [0, 0, 0]
+cam_location = [0.0, -12.0, 6.0]
+cam_target = [0, -2.0, 0]
 cam_rot_matrix = bproc.camera.rotation_from_forward_vec(np.array(cam_target) - np.array(cam_location))
 cam_pose = Matrix.Translation(cam_location) @ Matrix(cam_rot_matrix).to_4x4()
 bproc.camera.add_camera_pose(cam_pose)
@@ -74,9 +77,17 @@ bproc.renderer.set_output_format("PNG")
 bproc.renderer.enable_segmentation_output(map_by=["category_id", "instance", "name"])
 bproc.renderer.set_max_amount_of_samples(100)
 bproc.renderer.set_light_bounces(diffuse_bounces=3, glossy_bounces=3)
+# Run the simulation with physics
+bproc.object.simulate_physics_and_fix_final_poses(min_simulation_time=1, max_simulation_time=20, check_object_interval=1)
 
 # Renderizar
 data = bproc.renderer.render()
+
+# write the data to a .hdf5 container
+bproc.writer.write_hdf5(output_dir, data)
+
+# This will make the renderer render the first n frames of the simulation
+#bproc.utility.set_keyframe_render_interval(frame_end=216)
 
 # Guardar imagen RGB
 img_bgr = data["colors"][0].astype(np.uint8)
