@@ -44,6 +44,6 @@ def convert_obj_with_vertex_colors_to_ply(obj_path, ply_path):
 
 
 # Main
-model_obj = ''
-model_ply = ''
+model_obj = '../obj/hotnuts.obj'
+model_ply = '../ply/barcel/hotnuts.ply'
 convert_obj_with_vertex_colors_to_ply(model_obj, model_ply)
