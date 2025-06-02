@@ -13,7 +13,7 @@ OUTPUT_DIR = "output_dataset"
 COCO_DIR = os.path.join(OUTPUT_DIR, "coco_data")
 IMG_OUTPUT_DIR = os.path.join(COCO_DIR, "imgs")
 MASK_OUTPUT_DIR = os.path.join(COCO_DIR, "masks")
-NUM_SCENES = 2
+NUM_SCENES = 15
 NUM_CAMERAS = 10
 
 os.makedirs(IMG_OUTPUT_DIR, exist_ok=True)
@@ -137,7 +137,7 @@ def generate_camera_poses(num_angles=10):
         x, y = distance * np.cos(angle), distance * np.sin(angle)
         z = height
         cam_location = [x, y, z]
-        target = [np.random.uniform(-0.3, 0.3), np.random.uniform(-0.3, 0.3), 0]
+        target = [np.random.uniform(-0.3, 0.3), np.random.uniform(-0.3, 0.3), -4]
         cam_rot_matrix = bproc.camera.rotation_from_forward_vec(np.array(target) - np.array(cam_location))
         pose = Matrix.Translation(cam_location) @ Matrix(cam_rot_matrix).to_4x4()
         poses.append(pose)
@@ -175,12 +175,21 @@ def write_coco_annotations(all_data, category_id_to_name):
                 continue
             x, y, w, h = int(xs.min()), int(ys.min()), int(xs.max() - xs.min()), int(ys.max() - ys.min())
 
+            # Encontrar contornos para segmentación COCO
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            segmentation = []
+            for contour in contours:
+                seg = contour.flatten().tolist()
+                if len(seg) >= 6:
+                    segmentation.append(seg)
+
             annotations.append({
-                "id": annotation_id,
+                "intance_id": annotation_id,
                 "image_id": image_id,
-                "category_id": category_id,
+                "class_id": category_id,
                 "bbox": [x, y, w, h],
                 "area": int(mask.sum() / 255),
+                "segmentation": segmentation,
                 "iscrowd": 0
             })
             annotation_id += 1
