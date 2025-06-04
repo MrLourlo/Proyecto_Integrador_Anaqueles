@@ -2,78 +2,92 @@ import os
 import json
 import shutil
 import random
+from pathlib import Path
+from tqdm import tqdm
 
-# Configuración
-dataset_dir = "output_dataset/coco_data"
-output_dir = "yolo_dataset"
-train_ratio = 0.8
+# === CONFIG ===
+COCO_PATH = 'output_dataset/coco_data/coco_annotations.json'   # Tu archivo COCO completo
+IMG_SRC_DIR = 'output_dataset/coco_data/imgs'                   # Carpeta con todas las imágenes
+OUT_DIR = 'yolo_dataset'                         # Carpeta destino para YOLOv8
+SPLIT_RATIO = 0.8                                # 80% train, 20% val
 
-os.makedirs(output_dir, exist_ok=True)
-for subfolder in ["images/train", "images/val", "annotations"]:
-    os.makedirs(os.path.join(output_dir, subfolder), exist_ok=True)
+# === CREAR CARPETAS DESTINO ===
+paths = ['images/train', 'images/val', 'labels/train', 'labels/val']
+for p in paths:
+    Path(f"{OUT_DIR}/{p}").mkdir(parents=True, exist_ok=True)
 
-# Carga anotaciones COCO
-with open(os.path.join(dataset_dir, "coco_annotations.json"), "r") as f:
+# === CARGAR ANOTACIONES COCO ===
+with open(COCO_PATH, 'r') as f:
     coco = json.load(f)
 
-images = coco["images"]
-annotations = coco["annotations"]
-categories = coco["categories"]
+images = coco['images']
+annotations = coco['annotations']
+categories = {cat['id']: cat['name'] for cat in coco['categories']}
 
-# Mezclar imágenes y dividir en train/val
-random.seed(42)
+# === DIVIDIR IMÁGENES EN TRAIN/VAL ===
 random.shuffle(images)
-split_idx = int(len(images) * train_ratio)
-train_images = images[:split_idx]
-val_images = images[split_idx:]
+split_index = int(len(images) * SPLIT_RATIO)
+train_images = images[:split_index]
+val_images = images[split_index:]
 
-# Crear diccionarios para rápido acceso
-train_img_ids = set(img["id"] for img in train_images)
-val_img_ids = set(img["id"] for img in val_images)
+image_id_to_split = {
+    img['id']: 'train' if img in train_images else 'val' for img in images
+}
 
-def filter_annotations(img_ids):
-    return [ann for ann in annotations if ann["image_id"] in img_ids]
+# === AGRUPAR ANOTACIONES POR IMAGEN ===
+ann_map = {}
+for ann in annotations:
+    if ann['image_id'] not in ann_map:
+        ann_map[ann['image_id']] = []
+    ann_map[ann['image_id']].append(ann)
 
-train_anns = filter_annotations(train_img_ids)
-val_anns = filter_annotations(val_img_ids)
+# === FUNCIONES DE CONVERSIÓN ===
+def coco_to_yolo_bbox(bbox, img_w, img_h):
+    x, y, w, h = bbox
+    return [
+        (x + w / 2) / img_w,
+        (y + h / 2) / img_h,
+        w / img_w,
+        h / img_h
+    ]
 
-# Función para copiar imágenes a la carpeta correspondiente
-def copy_images(image_list, src_dir, dst_dir):
-    for img in image_list:
-        src_path = os.path.join(src_dir, img["file_name"])
-        dst_path = os.path.join(dst_dir, img["file_name"])
-        if not os.path.exists(dst_path):
-            shutil.copy2(src_path, dst_path)
+def convert_and_save(image, split):
+    image_id = image['id']
+    file_name = image['file_name']
+    w, h = image['width'], image['height']
+    img_src = os.path.join(IMG_SRC_DIR, file_name)
+    img_dst = os.path.join(OUT_DIR, f'images/{split}/{file_name}')
+    shutil.copyfile(img_src, img_dst)
 
-# Copiar imágenes
-copy_images(train_images, os.path.join(dataset_dir, "imgs"), os.path.join(output_dir, "images/train"))
-copy_images(val_images, os.path.join(dataset_dir, "imgs"), os.path.join(output_dir, "images/val"))
+    label_path = os.path.join(OUT_DIR, f'labels/{split}/{Path(file_name).with_suffix(".txt")}')
+    with open(label_path, 'w') as f:
+        for ann in ann_map.get(image_id, []):
+            if ann.get("iscrowd", 0) == 1:
+                continue  # ignorar anotaciones con máscara tipo RLE
+            if not ann.get("segmentation") or len(ann["segmentation"]) == 0:
+                continue  # ignorar si no hay segmentación válida
 
-# Guardar anotaciones COCO filtradas
-def save_coco_json(images, annotations, categories, filename):
-    coco_format = {
-        "images": images,
-        "annotations": annotations,
-        "categories": categories
-    }
-    with open(filename, "w") as f:
-        json.dump(coco_format, f)
+            cat_id = ann['class_id']
+            bbox = coco_to_yolo_bbox(ann['bbox'], w, h)
+            segm = ann['segmentation'][0]  # solo el primer polígono
+            norm_segm = [str(coord / w if i % 2 == 0 else coord / h) for i, coord in enumerate(segm)]
+            line = f"{cat_id} {' '.join(map(str, bbox))} {' '.join(norm_segm)}\n"
+            f.write(line)
 
-save_coco_json(train_images, train_anns, categories, os.path.join(output_dir, "annotations/instances_train.json"))
-save_coco_json(val_images, val_anns, categories, os.path.join(output_dir, "annotations/instances_val.json"))
 
-# Crear archivo data.yaml
-data_yaml = f"""
-path: {os.path.abspath(output_dir)}
-train: images/train
-val: images/val
+print("🔄 Convirtiendo dataset COCO → YOLOv8 formato segmentación...")
+for img in tqdm(images):
+    split = image_id_to_split[img['id']]
+    convert_and_save(img, split)
 
-names:
-"""
-for cat in categories:
-    data_yaml += f"  {cat['id']}: {cat['name']}\n"
+# === GENERAR data.yaml ===
+data_yaml_path = os.path.join(OUT_DIR, "data.yaml")
+with open(data_yaml_path, "w") as f:
+    f.write(f"path: {OUT_DIR}\n")
+    f.write("train: images/train\n")
+    f.write("val: images/val\n\n")
+    f.write("names:\n")
+    for cat_id in sorted(categories.keys()):
+        f.write(f"  {cat_id}: {categories[cat_id]}\n")
 
-with open(os.path.join(output_dir, "data.yaml"), "w") as f:
-    f.write(data_yaml)
-
-print("Dataset preparado en:", os.path.abspath(output_dir))
+print(f"✅ Conversión completa. Archivo data.yaml generado en {data_yaml_path}")

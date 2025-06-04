@@ -8,12 +8,12 @@ import json
 import random
 
 # ---------- CONFIGURACIONES ----------
-PLY_FOLDER = os.path.join(os.path.dirname(__file__), "../ply")
+OBJ_FOLDER = os.path.join(os.path.dirname(__file__), "../obj")
 OUTPUT_DIR = "output_dataset"
 COCO_DIR = os.path.join(OUTPUT_DIR, "coco_data")
 IMG_OUTPUT_DIR = os.path.join(COCO_DIR, "imgs")
 MASK_OUTPUT_DIR = os.path.join(COCO_DIR, "masks")
-NUM_SCENES = 15
+NUM_SCENES = 1
 NUM_CAMERAS = 10
 
 os.makedirs(IMG_OUTPUT_DIR, exist_ok=True)
@@ -88,13 +88,14 @@ def setup_scene():
     sun = bproc.types.Light()
     sun.set_type("SUN")
     sun.set_location([
-        4 + np.random.uniform(-1, 1),
-        -4 + np.random.uniform(-1, 1),
-        4 + np.random.uniform(-1, 1)
+        6 + np.random.uniform(-1, 1),
+        -6 + np.random.uniform(-1, 1),
+        8 + np.random.uniform(-1, 1)
     ])
-    sun.set_energy(4 + np.random.uniform(-1, 1))
+    sun.set_energy(3 + np.random.uniform(-1, 1))
 
 
+# deprecated, now using img textures
 def create_vertex_color_material():
     mat = bproc.material.create("vertex_color_mat")
     nt = mat.blender_obj.node_tree
@@ -104,36 +105,44 @@ def create_vertex_color_material():
     nt.links.new(vc_node.outputs["Color"], bsdf.inputs["Base Color"])
     return mat
 
-def load_and_place_objects(ply_folder, material):
+def load_and_place_objects(obj_folder):
     objects = []
     category_map = {}
     class_id = 1
-    model_files = sorted([f for f in os.listdir(ply_folder) if f.lower().endswith(".ply")])
+
+    model_files = sorted([f for f in os.listdir(obj_folder) if f.lower().endswith(".obj")])
     for fname in model_files:
-        path = os.path.join(ply_folder, fname)
-        base_objs = bproc.loader.load_obj(path)
+        obj_path = os.path.join(obj_folder, fname)
+        obj_name = os.path.splitext(fname)[0]
+
+        # Cargar el .obj con su .mtl y textura
+        base_objs = bproc.loader.load_obj(obj_path)
+
         for base_obj in base_objs:
             for _ in range(np.random.randint(2, 5)):
                 obj = base_obj.duplicate()
-                obj.set_location(np.random.uniform(-4, 4, size=3))
+                obj.set_location(np.random.uniform(-3, 3, size=3))
                 obj.set_rotation_euler(Euler(np.random.uniform(-np.pi / 4, np.pi / 4, size=3)))
-                obj.set_material(0, material)
                 obj.set_cp("category_id", class_id)
                 obj.enable_rigidbody(active=True)
                 objects.append(obj)
-                #print(obj.get_name())
-        category_map[class_id] = os.path.splitext(fname)[0]
+
+        category_map[class_id] = obj_name
         class_id += 1
+
+        # Elimina el original para evitar duplicados
         for base_obj in base_objs:
             base_obj.delete()
+
     return objects, category_map
+
 
 def generate_camera_poses(num_angles=10):
     poses = []
     for i in range(num_angles):
         angle = 2 * np.pi * i / num_angles + np.random.uniform(-0.2, 0.2)
-        distance = 14 * np.random.uniform(0.9, 1.1)
-        height = 4 * np.random.uniform(0.9, 1.1)
+        distance = 7 * np.random.uniform(0.9, 1.1)
+        height = 1 * np.random.uniform(0.9, 1.1)
         x, y = distance * np.cos(angle), distance * np.sin(angle)
         z = height
         cam_location = [x, y, z]
@@ -184,7 +193,7 @@ def write_coco_annotations(all_data, category_id_to_name):
                     segmentation.append(seg)
 
             annotations.append({
-                "intance_id": annotation_id,
+                "instance_id": annotation_id,
                 "image_id": image_id,
                 "class_id": category_id,
                 "bbox": [x, y, w, h],
@@ -236,8 +245,8 @@ def main():
         # Escena base
         setup_scene()
 
-        mat = create_vertex_color_material()
-        objects, category_id_to_name = load_and_place_objects(PLY_FOLDER, mat)
+        #mat = create_vertex_color_material()
+        objects, category_id_to_name = load_and_place_objects(OBJ_FOLDER)
 
         cam_poses = generate_camera_poses(NUM_CAMERAS)
         for i, pose in enumerate(cam_poses):
@@ -248,7 +257,9 @@ def main():
         bproc.renderer.set_max_amount_of_samples(80)
         bproc.renderer.set_light_bounces(diffuse_bounces=2, glossy_bounces=2)
 
-        bproc.object.simulate_physics(min_simulation_time=1, max_simulation_time=10, check_object_interval=1, substeps_per_frame=24)
+        #nos interesa cuando ya estan en el suelo
+        #simulate_physics_fix_final_poses
+        bproc.object.simulate_physics_and_fix_final_poses(min_simulation_time=1, max_simulation_time=10, check_object_interval=1, substeps_per_frame=24)
         bproc.utility.set_keyframe_render_interval(frame_start=15, frame_end=15 + NUM_CAMERAS)
         data = bproc.renderer.render()
 
