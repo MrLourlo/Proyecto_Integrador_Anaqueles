@@ -2,7 +2,7 @@ import blenderproc as bproc
 import bpy
 import os
 import numpy as np
-from mathutils import Matrix, Euler
+from mathutils import Matrix, Euler, Vector
 import cv2
 import json
 import random
@@ -14,7 +14,7 @@ COCO_DIR = os.path.join(OUTPUT_DIR, "coco_data")
 IMG_OUTPUT_DIR = os.path.join(COCO_DIR, "imgs")
 MASK_OUTPUT_DIR = os.path.join(COCO_DIR, "masks")
 NUM_SCENES = 1
-NUM_CAMERAS = 10
+NUM_CAMERAS = 5
 
 os.makedirs(IMG_OUTPUT_DIR, exist_ok=True)
 os.makedirs(MASK_OUTPUT_DIR, exist_ok=True)
@@ -105,6 +105,30 @@ def create_vertex_color_material():
     nt.links.new(vc_node.outputs["Color"], bsdf.inputs["Base Color"])
     return mat
 
+def deform_faces_randomly(obj, strength=0.1, probability=0.1):
+    mesh = obj.blender_obj.data
+    if not mesh:
+        return
+
+    bpy.context.view_layer.objects.active = obj.blender_obj
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    # Para cada cara
+    for face in mesh.polygons:
+        if np.random.rand() < probability:
+            # Obtener el centroide de la cara
+            center = sum((mesh.vertices[i].co for i in face.vertices), Vector()) / len(face.vertices)
+
+            # Dirección de deformación: hacia adentro (normal negativa) + ruido
+            deformation_dir = -face.normal + Vector(np.random.uniform(-0.1, 0.1, 3))
+            deformation_vec = Vector(deformation_dir).normalized() * strength
+
+            # Mover todos los vértices de la cara
+            for i in face.vertices:
+                mesh.vertices[i].co += deformation_vec
+
+
+
 def load_and_place_objects(obj_folder):
     objects = []
     category_map = {}
@@ -124,6 +148,7 @@ def load_and_place_objects(obj_folder):
                 obj.set_location(np.random.uniform(-3, 3, size=3))
                 obj.set_rotation_euler(Euler(np.random.uniform(-np.pi / 4, np.pi / 4, size=3)))
                 obj.set_cp("category_id", class_id)
+                #deform_faces_randomly(obj, 0.01, 0.01)
                 obj.enable_rigidbody(active=True)
                 objects.append(obj)
 
@@ -141,7 +166,7 @@ def generate_camera_poses(num_angles=10):
     poses = []
     for i in range(num_angles):
         angle = 2 * np.pi * i / num_angles + np.random.uniform(-0.2, 0.2)
-        distance = 7 * np.random.uniform(0.9, 1.1)
+        distance = 4 * np.random.uniform(0.9, 1.1)
         height = 1 * np.random.uniform(0.9, 1.1)
         x, y = distance * np.cos(angle), distance * np.sin(angle)
         z = height
@@ -177,7 +202,7 @@ def write_coco_annotations(all_data, category_id_to_name):
 
             mask = (seg_img == instance_id).astype(np.uint8) * 255
             mask_name = f"img_{frame_idx:05d}_obj{category_id}_{instance_counts_per_class[category_id]:04d}.png"
-            cv2.imwrite(os.path.join(MASK_OUTPUT_DIR, mask_name), mask)
+            #cv2.imwrite(os.path.join(MASK_OUTPUT_DIR, mask_name), mask)
 
             ys, xs = np.where(mask > 0)
             if len(xs) == 0 or len(ys) == 0:
