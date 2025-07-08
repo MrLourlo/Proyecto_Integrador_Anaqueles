@@ -1,0 +1,9 @@
+# Apuntar al nuevo dataset definitivo
+path: ./mantecadas_yolo_definitivo
+
+train: images/train
+val: images/val
+
+# Las clases siguen siendo las mismas
+nc: 4
+names: ['original', 'nuez', 'marmoleada', 'chocolate']
