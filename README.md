@@ -1,0 +1,37 @@
+Auditoría Automatizada de Productos en Anaqueles – BimboNet 🛒📷
+Este repositorio contiene el desarrollo de una solución de auditoría visual para BimboNet, enfocada en la detección y segmentación automática de productos en anaqueles. Utilizamos técnicas avanzadas de visión computacional, incluyendo modelos de inteligencia artificial como SAM y DINO, así como herramientas de procesamiento de imagen como OCR y ORB features.
+
+📌 Objetivos del proyecto
+Automatizar la auditoría de productos en tiendas.
+
+Detectar y segmentar productos en imágenes de anaqueles.
+
+Facilitar la trazabilidad visual de inventarios.
+
+Generar datos sintéticos que fortalezcan los modelos de segmentación y detección.
+
+🧠 Tecnologías utilizadas
+Python (principal lenguaje de programación)
+
+Jupyter Notebooks (para prototipado y análisis)
+
+Segment Anything Model (SAM) – Meta AI
+
+DINO (Self-supervised Vision Transformer)
+
+OCR (Optical Character Recognition) – Tesseract
+
+ORB features – OpenCV
+
+BlenderProc – para generación de datasets sintéticos
+
+COCO Format – para anotaciones de segmentación
+
+📊 Resultados esperados
+Segmentaciones precisas por instancia
+
+Detección automática de productos con nombres vía OCR
+
+Agrupación de productos similares usando características visuales (DINO/ORB)
+
+🔍 Próxima integración: métricas de evaluación y panel visual para comparación entre métodos.
